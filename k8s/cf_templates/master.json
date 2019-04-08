@@ -1,0 +1,298 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "AWS CloudFormation Template to launch kubernetes master .",
+  
+  "Parameters" : {
+  
+    "InstanceType": {
+    "Description": "k8s EC2 instance type",
+    "Type": "String",
+    "Default": "t2.medium",
+    "AllowedValues": [
+            "t2.medium",
+            "t2.large",
+            "t2.xlarge"
+         ],
+    "ConstraintDescription": " Must be a valid EC2 instance type."
+    },
+
+   "InstanceCount" : {
+   "Description" : "Number of EC2 instances to launch",
+   "Type" : "Number",
+   "Default" : "1"
+   },
+
+   "KeyName": {
+   "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+   "Type": "AWS::EC2::KeyPair::KeyName",
+   "ConstraintDescription" : "Must be the name of an existing EC2 KeyPair."
+    }
+   },
+
+   "Mappings" : {
+   "AWSInstanceType2Arch" : {
+   "t2.medium"   : { "Arch" : "64" },
+   "t2.medium"   : { "Arch" : "64" },
+   "t2.large"    : { "Arch" : "64" },
+   "t2.xlarge"   : { "Arch" : "64" },
+   "t3.large"   : { "Arch" : "64" },
+   "t3.xlarge"  : { "Arch" : "64" },
+   "t3.medium"  : { "Arch" : "64" }
+    },
+   "AWSRegionArch2AMI" : {
+   "us-east-2"      : { "64" : "ami-05599e7771b7eb606" }
+     }
+    },
+
+    "Resources" : {
+    
+    "VPC" : {
+    "Type" : "AWS::EC2::VPC",
+    "Properties" : {
+    "CidrBlock" : "10.0.0.0/16",
+    "EnableDnsSupport": "true",
+    "EnableDnsHostnames": "true",
+    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               {"Key" : "Network", "Value" : "Public" },
+               {"Key" : "Name", "Value" : "K8s_VPC" } ] }
+    },
+
+    "PublicSubnet1" : {
+    "Type" : "AWS::EC2::Subnet",
+    "Properties" : {
+    "VpcId" : { "Ref" : "VPC" },
+    "CidrBlock" : "10.0.1.0/24",
+    "AvailabilityZone" : "us-east-2a",
+    "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               { "Key" : "Network", "Value" : "Public" },
+               { "Key" : "Name", "Value" : "K8s_VPC_public_subnet1" }
+            ]      
+		  }
+    },
+
+    "PublicSubnet2" : {
+    "Type" : "AWS::EC2::Subnet",
+    "Properties" : {
+    "VpcId" : { "Ref" : "VPC" },
+    "CidrBlock" : "10.0.2.0/24",
+    "AvailabilityZone" : "us-east-2b",
+    "Tags" : [ { "Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               { "Key" : "Network", "Value" : "Public" },
+               { "Key" : "Name", "Value" : "K8s_VPC_public_subnet2" }
+             ]
+        }
+    },
+
+    "PublicSubnet3" : {
+    "Type" : "AWS::EC2::Subnet",
+    "Properties" : {
+    "VpcId" : { "Ref" : "VPC" },
+    "CidrBlock" : "10.0.3.0/24",
+    "AvailabilityZone" : "us-east-2c",
+    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               {"Key" : "Network", "Value" : "Public" },
+               {"Key" : "Name", "Value" : "K8s_VPC_public_subnet3" }
+        ]
+      }
+    },
+
+    "InternetGateway" : {
+    "Type" : "AWS::EC2::InternetGateway",
+    "Properties" : {
+    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               {"Key" : "Network", "Value" : "Public" },
+               {"Key" : "Name", "Value" : "K8s_IGW" }
+        ]
+      }
+    },
+
+    "AttachGateway" : {
+    "Type" : "AWS::EC2::VPCGatewayAttachment",
+    "Properties" : {
+    "VpcId" : { "Ref" : "VPC" },
+    "InternetGatewayId" : { "Ref" : "InternetGateway" }
+     }
+    },
+
+    "PublicRouteTable" : {
+    "Type" : "AWS::EC2::RouteTable",
+    "Properties" : {
+    "VpcId" : {"Ref" : "VPC"},
+    "Tags" : [ {"Key" : "Application", "Value" : { "Ref" : "AWS::StackId"} },
+               {"Key" : "Network", "Value" : "Public" },
+               {"Key" : "Name", "Value" : "K8s_Public_RT" } ]
+      }
+    },
+
+    "PublicRoute" : {
+    "Type" : "AWS::EC2::Route",
+    "DependsOn" : "AttachGateway",
+    "Properties" : {
+    "RouteTableId" : { "Ref" : "PublicRouteTable" },
+    "DestinationCidrBlock" : "0.0.0.0/0",
+    "GatewayId" : { "Ref" : "InternetGateway" }
+      }
+    },
+
+    "PublicSubnet1RouteTableAssociation" : {
+    "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+    "Properties" : {
+    "SubnetId" : { "Ref" : "PublicSubnet1" },
+    "RouteTableId" : { "Ref" : "PublicRouteTable" }
+      }
+    },
+
+    "PublicSubnet2RouteTableAssociation" : {
+    "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+    "Properties" : {
+    "SubnetId" : { "Ref" : "PublicSubnet2" },
+    "RouteTableId" : { "Ref" : "PublicRouteTable" }
+      }
+    },
+
+    "PublicSubnet3RouteTableAssociation" : {
+    "Type" : "AWS::EC2::SubnetRouteTableAssociation",
+    "Properties" : {
+    "SubnetId" : { "Ref" : "PublicSubnet3" },
+    "RouteTableId" : { "Ref" : "PublicRouteTable" }
+      }
+    },
+	
+    "InstanceSecurityGroup" : {
+    "Type" : "AWS::EC2::SecurityGroup",
+    "Properties" : {
+    "GroupDescription" : "Enable ssh and k8s master access",
+    "VpcId" : { "Ref" : "VPC" },
+    "SecurityGroupIngress" : [ { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0" },
+                               { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+                               { "IpProtocol" : "tcp", "FromPort" : "6443", "ToPort" : "6443", "CidrIp" : "0.0.0.0/0"},
+                               { "IpProtocol" : "tcp", "FromPort" : "10250", "ToPort" : "10252", "CidrIp" : "0.0.0.0/0"},
+                               {"IpProtocol" : "tcp", "FromPort" : "2379", "ToPort" : "2380", "CidrIp" : "0.0.0.0/0"},
+                               { "IpProtocol" : "tcp", "FromPort" : "8200", "ToPort" : "8200", "CidrIp" : "0.0.0.0/0"} ],
+    "Tags": [ { "Key": "Name", "Value": "K8s_Master_SG" } ]
+      }
+    },
+	
+    "SSMRole" : {
+    "Type": "AWS::IAM::Role",
+    "Properties": {
+    "AssumeRolePolicyDocument": {
+    "Version" : "2012-10-17",
+    "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                  "Service": "ec2.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+               } ]
+            },
+    "ManagedPolicyArns": [ "arn:aws:iam::aws:policy/service-role/AmazonEC2RoleforSSM" ]			
+		} 
+	},
+	
+    "InstanceProfile" : {
+	"Type" : "AWS::IAM::InstanceProfile",
+	"Properties" : {
+	"Roles" : [ { "Ref" : "SSMRole" } ]
+	 }
+	},
+
+    "Instance" : {
+    "Type" : "AWS::EC2::Instance",
+    "Properties" : {
+    "KeyName" : { "Ref" : "KeyName" },
+    "InstanceType" : { "Ref" : "InstanceType" },
+    "IamInstanceProfile" : { "Ref" : "InstanceProfile" } ,
+    "ImageId" : { "Fn::FindInMap" : [ "AWSRegionArch2AMI", { "Ref" : "AWS::Region" },
+                     { "Fn::FindInMap" : [ "AWSInstanceType2Arch", { "Ref" : "InstanceType" },
+                                          "Arch" ] } ] },
+    "BlockDeviceMappings" : [ {
+          "DeviceName" : "/dev/sdm",
+          "Ebs" : {
+            "VolumeType" : "gp2",
+            "DeleteOnTermination" : "false",
+            "VolumeSize" : "20"
+                  }
+               } ],
+
+    "NetworkInterfaces" : [
+      	{ "DeviceIndex" : "0",
+          "AssociatePublicIpAddress" : "true",
+          "DeleteOnTermination" : "true",
+          "SubnetId" : { "Ref" : "PublicSubnet1" },
+          "GroupSet" : [ { "Ref" : "InstanceSecurityGroup" } ]
+            }
+          ],
+    "UserData" : { "Fn::Base64" : { "Fn::Join": [ "", [
+                                    "#!/bin/bash\n",
+				    "set -x\n",
+				    "cd /tmp\n",
+				    "yum install -y https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/linux_amd64/amazon-ssm-agent.rpm\n",
+				    "systemctl start amazon-ssm-agent\n",
+				    "systemctl enable amazon-ssm-agent\n",
+				    "curl -sL https://rpm.nodesource.com/setup_6.x | sudo -E bash -\n",
+                                    "yum install nodejs-6.10.0-1nodesource.el7.centos -y\n"
+                     ] ] } },									  
+    "Tags": [ { "Key": "Name", "Value": "My_Master" },
+              { "Key": "master", "Value": "yes"	}  ] 
+			  
+	 } 
+	},
+			
+    "ElasticLoadBalancer" : {
+    "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+    "Properties" : {
+    "LoadBalancerName": "K8s-01-Master",
+    "CrossZone" : "True",
+    "Instances": [ { "Ref": "Instance" } ],
+    "SecurityGroups" : [ { "Ref" : "LoadBalancerSecurityGroup" } ],
+    "Subnets" : [ { "Ref" : "PublicSubnet1" }, { "Ref" : "PublicSubnet2" } ],
+    "Listeners" : [ { "LoadBalancerPort" : "443", "InstancePort" : "6443", "Protocol" : "TCP" } ],
+    "HealthCheck" : {
+    "Target" : "TCP:6443",
+    "HealthyThreshold" : "3",
+    "UnhealthyThreshold" : "5",
+    "Interval" : "90",
+    "Timeout" : "60"
+        }
+      }
+    },
+
+    "LoadBalancerSecurityGroup" : {
+    "Type" : "AWS::EC2::SecurityGroup",
+    "Properties" : {
+    "GroupDescription" : "Enable TCP access on port 443",
+    "VpcId" : { "Ref" : "VPC" },
+    "SecurityGroupIngress" : [ { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0" } ],
+    "SecurityGroupEgress" : [ { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0"} ],
+    "Tags" : [ { "Key": "Name", "Value": "K8s_Master_LB_sg" } ] } }
+   },
+
+   "Outputs": {
+   
+    "ElbDNS": {
+    "Description": "ELB DNS",
+    "Value": { "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ]}
+     },
+
+    "InstanceId" : {
+    "Description" : "InstanceId of the newly created k8s Master instance",
+    "Value" : { "Ref" : "Instance" }
+     },
+
+    "PublicIP" : {
+    "Description" : "Public IP address of the newly created EC2 instance",
+    "Value" : { "Fn::GetAtt" : [ "Instance", "PublicIp" ] }
+     },
+
+    "AZ": {
+    "Description": "Availability Zone of the newly created EC2 instance",
+    "Value": { "Fn::GetAtt" : [ "Instance", "AvailabilityZone" ] }
+     },
+
+    "WebUrl" : {
+    "Description" : "This is the endpoint of application.",
+    "Value" : { "Fn::Join" : [ "", [ "https://", { "Fn::GetAtt" : [ "Instance", "PublicIp"] } , ":8444" ] ] } }
+    }
+}
+

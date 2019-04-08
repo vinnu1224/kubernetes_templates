@@ -1,0 +1,50 @@
+{
+
+   "schemaVersion":"1.2",
+
+   "description":"Draining Node",
+
+   "parameters":{
+
+      "nodename":{
+
+         "type":"String",
+
+         "description":"Specify the Node name to drain"
+
+      }
+
+   },
+
+   "runtimeConfig":{
+
+      "aws:runShellScript":{
+
+         "properties":[
+
+            {
+
+               "id":"0.aws:runShellScript",
+
+               "runCommand":[
+
+                  "#!/bin/bash",
+
+                  "export KUBECONFIG=/etc/kubernetes/admin.conf",
+
+                  "sysctl net.bridge.bridge-nf-call-iptables=1",
+
+                  "kubectl drain --force {{ nodename }}"
+
+                  
+               ]
+
+            }
+
+         ]
+
+      }
+
+   }
+}
+

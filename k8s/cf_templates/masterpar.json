@@ -1,0 +1,23 @@
+[
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "k8skey"
+  },
+  {
+    "ParameterKey": "InstanceType",
+    "ParameterValue": "t2.medium"
+  },
+  {
+    "ParameterKey": "InstanceCount",
+    "ParameterValue": "1"
+  }
+
+
+]
+
+
+
+
+
+
+

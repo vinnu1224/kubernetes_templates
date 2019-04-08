@@ -1,0 +1,276 @@
+{
+  "AWSTemplateFormatVersion" : "2010-09-09",
+  "Description" : "AWS CloudFormation Template to launch kubernetes master .",
+  "Parameters" : {
+    "VpcId" : {
+      "Type" : "AWS::EC2::VPC::Id",
+      "Description" : "VpcId of your existing Virtual Private Cloud (VPC)"
+    },
+   "SubnetId" : {
+      "Type" : "List<AWS::EC2::Subnet::Id>",
+      "Description" : "The list of SubnetIds, for at least two Availability Zones in the region in your Virtual Private Cloud (VPC)"
+    },
+      "AZs" : { 
+		"Type" : "List<AWS::EC2::AvailabilityZone::Name>",
+	   	"Description" : "The list of availabilityzones in the region"
+	   	},   
+		  	
+      "KeyName": {
+      "Description" : "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+      "Type": "AWS::EC2::KeyPair::KeyName",
+      "ConstraintDescription" : "Must be the name of an existing EC2 KeyPair."
+    }
+		},
+  "Resources" : {
+    "InstanceSecurityGroup" : {
+    "Type" : "AWS::EC2::SecurityGroup",
+    "Properties" : {
+    "VpcId" : { "Ref" : "VpcId" },
+    "GroupDescription" : "Enable ssh and k8s node access",
+    "SecurityGroupIngress" : [ { "IpProtocol" : "tcp", "FromPort" : "22", "ToPort" : "22", "CidrIp" : "0.0.0.0/0"},
+		                       { "IpProtocol" : "tcp", "FromPort" : "80", "ToPort" : "80", "CidrIp" : "0.0.0.0/0"},
+                               { "IpProtocol" : "tcp", "FromPort" : "6443", "ToPort" : "6443", "CidrIp" : "0.0.0.0/0"},
+                               { "IpProtocol" : "tcp", "FromPort" : "10250", "ToPort" : "10250", "CidrIp" : "0.0.0.0/0"},
+							   { "IpProtocol" : "tcp", "FromPort" : "30000", "ToPort" : "32767", "CidrIp" : "0.0.0.0/0"}],
+    "Tags": [ { "Key": "Name", "Value": "k8snode_SG" } ]
+	 }
+	},
+    "ElasticLoadBalancer" : {
+    "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+    "Properties" : {
+    "LoadBalancerName": "K8s-01-Cluster",
+    "Subnets" : { "Ref" : "SubnetId" } ,
+    "CrossZone" : "True",
+    "SecurityGroups" : [ { "Ref" : "LoadBalancerSecurityGroup" } ],
+    "Listeners" : [ { "LoadBalancerPort" : "443", "InstancePort" : "6443", "Protocol" : "TCP" } ],
+    "HealthCheck" : {
+    "Target" : "TCP:6443",
+    "HealthyThreshold" : "3",
+    "UnhealthyThreshold" : "5",
+    "Interval" : "90",
+    "Timeout" : "60"
+        }
+      }
+    },	
+    "LoadBalancerSecurityGroup" : {
+    "Type" : "AWS::EC2::SecurityGroup",
+    "Properties" : {
+    "GroupDescription" : "Enable access on port 443",
+    "VpcId" : { "Ref" : "VpcId" },
+    "SecurityGroupIngress" : [ { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0" } ],
+    "SecurityGroupEgress" : [ { "IpProtocol" : "tcp", "FromPort" : "443", "ToPort" : "443", "CidrIp" : "0.0.0.0/0"} ],
+    "Tags" : [ { "Key": "Name", "Value": "K8s_node_LB_sg" } ] 
+	 } 
+	},
+	
+    "LifecycleHookTopic" : {
+    "Type" : "AWS::SNS::Topic",
+    "Properties" : {
+    "TopicName" : "kubernetes-LifecycleHook1",
+    "Subscription": [ { "Endpoint": { "Fn::GetAtt": [ "Lambda", "Arn" ] },
+                        "Protocol": "lambda" } ] 
+	 } 
+	},
+					
+    "LifecycleHookRole": {
+    "Type": "AWS::IAM::Role",
+    "Properties": {
+    "AssumeRolePolicyDocument": {
+    "Version" : "2012-10-17",
+    "Statement": [ {
+                  "Effect": "Allow",
+                  "Principal": {
+                  "Service": "autoscaling.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole"
+               } ]
+            }  
+		} 
+	},
+		
+    "LifecycleHookPolicy" : {
+    "Type" : "AWS::IAM::ManagedPolicy",
+    "Properties" : {
+    "PolicyDocument" : {
+    "Version" : "2012-10-17",
+    "Statement": [ {
+    "Effect" : "Allow",
+    "Action" : [ "sns:Publish" ],
+         "Resource" : "*"
+         } ]
+      },
+	    "Roles": [{ "Ref": "LifecycleHookRole" }]
+         }
+      },
+	  
+    "LambdaRole": {
+    "Type": "AWS::IAM::Role",
+    "Properties": {
+    "AssumeRolePolicyDocument": {
+    "Version" : "2012-10-17",
+    "Statement": [{
+                  "Effect": "Allow",
+                  "Principal": {
+                     "Service": "lambda.amazonaws.com"
+                  },
+                  "Action": "sts:AssumeRole" } ]
+            },
+     "Policies": [
+      {
+        "PolicyName": "CloudwatchLogs",
+         "PolicyDocument": {
+         "Statement": [
+           {
+             "Action": [
+                  "logs:CreateLogGroup",
+                  "logs:CreateLogStream",
+                  "logs:GetLogEvents",
+                  "logs:PutLogEvents"
+                ],
+                "Resource": [ "arn:aws:logs:*:*:*" ],
+                "Effect": "Allow"
+              }
+            ]
+          }
+        }
+      ],
+    "ManagedPolicyArns": [
+                    "arn:aws:iam::aws:policy/AmazonSSMFullAccess",
+                    "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole",
+                    "arn:aws:iam::aws:policy/AmazonS3FullAccess"					
+					]			
+		}
+		},
+		
+    "LambdaPolicy" : {
+    "Type" : "AWS::IAM::ManagedPolicy",
+    "Properties" : {
+    "PolicyDocument" : {
+    "Version": "2012-10-17",
+    "Statement": [ {
+            "Effect": "Allow",
+            "Resource": "*",
+            "Action": [
+            "ec2:DescribeInstances",
+            "ec2:CreateNetworkInterface",
+            "ec2:AttachNetworkInterface",
+            "ec2:DescribeNetworkInterfaces",
+            "autoscaling:CompleteLifecycleAction"
+        ] }
+      ] },
+	        
+	"Roles": [{ "Ref": "LambdaRole" }]
+         }  },
+    
+    "Lambda": {
+    "Type": "AWS::Lambda::Function",
+    "Properties": {
+    "Code": {
+    "S3Bucket": "bucket-appzdev01",
+    "S3Key": "lambda.zip" } ,
+    "Description": "Lambda Function for kubectl drain",
+    "MemorySize": 128,
+    "Handler": "lambda.lambda_handler",
+    "Role": { "Fn::GetAtt": [ "LambdaRole", "Arn" ] },
+    "Timeout": 5,
+    "Runtime": "python2.7" 
+    },
+    "DependsOn": [
+      "LambdaRole"
+    ]
+   },
+  
+    "LambdaInvokePermission": {
+    "Type": "AWS::Lambda::Permission",
+    "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "Principal": "sns.amazonaws.com",
+    "SourceArn": { "Ref": "LifecycleHookTopic" },
+    "FunctionName": { "Fn::GetAtt": [ "Lambda", "Arn" ] }
+    }
+   },
+   	
+    "LaunchConfig" : {
+    "Type" : "AWS::AutoScaling::LaunchConfiguration",
+    "Properties" : {
+    "InstanceType" : "t2.medium",
+    "ImageId" : "ami-05599e7771b7eb606",	 
+    "KeyName" : { "Ref" : "KeyName" },
+    "LaunchConfigurationName" : "K8s_Node_launch",
+    "AssociatePublicIpAddress" : "true",
+    "UserData" : { "Fn::Base64" : { "Fn::Join": [ "", [
+                            "#!/bin/bash\n",
+                            "set -x\n",
+                            "exec > >(tee /var/log/user-data.log|logger -t user-data ) 2>&1\n",
+                            "echo 'export VAULT_SKIP_VERIFY=true' >> ~/.bashrc\n",
+                            "echo 'export VAULT_ADDR=https://18.236.69.78:8200' >> ~/.bashrc\n",
+                            "echo 'export VAULT_TOKEN=7e9zjcQoBm2nMBR0LtlgumRo' >> ~/.bashrc\n",
+                            "source ~/.bashrc\n",
+                            "token=$(/root/vault read secret/K8sToken | awk 'NR==4 {print $2}')\n",
+                            "key=$(/root/vault read secret/SHAKEY | awk 'NR==4 {print $2}')\n",
+                            "sysctl net.bridge.bridge-nf-call-iptables=1\n",
+                            "kubeadm join 10.0.1.177:6443 --token $token  --discovery-token-ca-cert-hash sha256:$key" ] ] } },													
+    "SecurityGroups" :  [ { "Ref" : "InstanceSecurityGroup" } ],
+    "BlockDeviceMappings" : [
+        {
+           "DeviceName" : "/dev/sdm",
+           "Ebs" : { "VolumeSize" : "20", "VolumeType" : "gp2", "DeleteOnTermination" : "true"}
+         } ]
+		 		 } },
+				 
+    "K8SNodeASG" : {
+    "Type" : "AWS::AutoScaling::AutoScalingGroup",
+    "Properties" : { 
+    "AutoScalingGroupName" : "K8SNodeASG",
+    "LaunchConfigurationName" : { "Ref" : "LaunchConfig" },
+    "MinSize" : "2",
+    "MaxSize" : "5",
+    "DesiredCapacity" : "2",
+    "AvailabilityZones" :  { "Ref" : "AZs"} ,
+    "LoadBalancerNames" :  [{ "Ref" : "ElasticLoadBalancer" } ],
+    "VPCZoneIdentifier" : { "Ref" : "SubnetId" },
+    "Tags" : [ { "Key" : "Name", "Value" : "K8s_Node", "PropagateAtLaunch" : "True" } ] 
+	} 
+	},
+				
+    "LifecycleHook": {
+    "Type": "AWS::AutoScaling::LifecycleHook",
+    "Properties": {
+    "AutoScalingGroupName": { "Ref": "K8SNodeASG" },
+    "HeartbeatTimeout" : "300",
+    "LifecycleHookName" : "KubeLifecycleHook",
+    "LifecycleTransition": "autoscaling:EC2_INSTANCE_TERMINATING",
+    "NotificationTargetARN": { "Ref" : "LifecycleHookTopic" },
+    "RoleARN": { "Fn::GetAtt": [ "LifecycleHookRole", "Arn" ] }
+      }
+    },
+          
+    "K8sNodeServerScaleUpPolicy" : {
+    "Type" : "AWS::AutoScaling::ScalingPolicy",
+    "Properties" : {
+    "AdjustmentType" : "ChangeInCapacity",
+    "AutoScalingGroupName" : { "Ref" : "K8SNodeASG" },
+    "Cooldown" : "60",
+    "ScalingAdjustment" : "1"
+    }
+    },
+    "K8sNodeScaleDownPolicy" : {
+    "Type" : "AWS::AutoScaling::ScalingPolicy",
+    "Properties" : {
+    "AdjustmentType" : "ChangeInCapacity",
+    "AutoScalingGroupName" : { "Ref" : "K8SNodeASG" },
+    "Cooldown" : "60",
+    "ScalingAdjustment" : "-1"
+      }
+     }
+    },
+		
+    "Outputs": {
+    "ElbDNS": {
+    "Description": "ELB DNS",
+    "Value": {
+            "Fn::GetAtt": [ "ElasticLoadBalancer", "DNSName" ]}
+      }
+   }
+}
+
